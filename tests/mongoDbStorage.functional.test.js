@@ -18,21 +18,24 @@ describe('MongoDbStorage -Functional', function () {
   describe('collection property', async function (done) {
     it('calls MongoClient.db with database name', async function () {
       //arrange
-      let context = {};
-      context.turnState = {
-        get : function(){
-          return {};
+      let context = {
+        turnState : {
+          get : function(){
+            return {};
+          },
+          set : function(){
+            return {};
+          }        
         },
-        set : function(){
-          return {};
-        }        
-      };
-      context.activity = {
-        channelId : "channel1",
-        conversation : {
-          id : "convo"
+        activity : {
+          channelId : "channel1",
+          conversation : {
+            id : "convo"
+          }
         }
       };
+
+ 
       const storage = new MongoDbStorage({
         url: 'fake_url',
         database: 'fake_db'
