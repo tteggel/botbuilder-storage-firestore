@@ -53,7 +53,7 @@ server.listen(process.env.port || process.env.PORT || 3978, function () {
         conversation = {
           count
         };
-
+        console.log(JSON.stringify(context));
         await context.sendActivity(`${count} - You said ${context.activity.text}`);
         await save(context, count, name,conversation);
       }
