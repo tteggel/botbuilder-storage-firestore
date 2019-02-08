@@ -77,6 +77,42 @@ describe('MongoDbStorage ', function () {
     });
   });
 
+  describe('ttlIndexFilter', function () {
+    it('returns true for filter with field "dt" and MongoDB expireAfterSeconds', function () {
+      const subject = {
+        key: {
+          dt: 1
+        },
+        expireAfterSeconds: 1234
+      };
+
+      assert.equal(MongoDbStorage.ttlIndexFilter(subject), true);
+    })
+
+    it('returns false for filter with different key field', function () {
+      const subject = {
+        key: {
+          NOT_dt: 1
+        },
+        expireAfterSeconds: 1234
+      };
+
+      assert.equal(MongoDbStorage.ttlIndexFilter(subject), false);
+    })
+
+    it('returns false for filter with no mongo  expireAfterSeconds', function () {
+      const subject = {
+        key: {
+          dt: 1
+        },
+        NOT_expireAfterSeconds: 1234
+      };
+
+      assert.equal(MongoDbStorage.ttlIndexFilter(subject), false);
+    })
+  })
+
+
   describe('shouldSlam', function () {
     it('returns truthy if etag is *', async function () {
       const actual = MongoDbStorage.shouldSlam('*');
@@ -139,6 +175,25 @@ describe('MongoDbStorage ', function () {
       });
       assert.equal(actual.collection, expected, 'Expected default collection name');
     });
+
+    it('should use supplied time to live number', function () {
+      const expected = 123;
+      const actual = MongoDbStorage.ensureConfig({
+        url: 'u',
+        autoExpireMinutes: expected
+      });
+
+      assert.deepEqual(actual.autoExpireMinutes, expected, 'Expected value passed in');
+
+    });
+
+    it('should throw when invalid number', function () {
+      const actual = () => MongoDbStorage.ensureConfig({
+        url: 'u',
+        autoExpireMinutes: -234
+      });
+      assert.throws(actual, MongoDbStorageError.INVALID_AUTOEXPIRE_VALUE);
+    })
 
   });
 
@@ -206,7 +261,11 @@ describe('MongoDbStorage ', function () {
         url: 'fake_url',
         database: 'fake_db'
       });
+
       sinon.stub(storage, "connect");
+      sinon.stub(storage, "Collection").returns({
+        yo: true
+      });
 
       //act
       await storage.ensureConnected();
@@ -217,6 +276,26 @@ describe('MongoDbStorage ', function () {
       //cleanup
       storage.connect.restore();
     });
+
+    it('should call createTtlIndex if client does not exist.', async function () {
+      //arrange
+      const storage = new MongoDbStorage({
+        url: 'fake_url'
+      });
+      sinon.stub(storage, "connect");
+      sinon.stub(storage, "createTtlIndex");
+
+      //act
+      await storage.ensureConnected();
+
+      //assert
+      assert(storage.createTtlIndex.calledOnce);
+
+      //cleanup
+      storage.connect.restore();
+      storage.createTtlIndex.restore();
+    });
+
     it('should not call connect if client exists.', async function () {
       //arrange
       const storage = new MongoDbStorage({
@@ -235,93 +314,47 @@ describe('MongoDbStorage ', function () {
       //cleanup
       storage.connect.restore();
     });
+
   });
-  describe('read', async function (done) {
-    it('should call Collection.find with query that includes keys that are passed in', async function () {
-      //arrange
 
-      const storage = new MongoDbStorage({
+  describe('createTtlIndex', async function () {
+    let storage;
+    let collectionStub;
+    let fakeCollection;
+
+    beforeEach(async function () {
+      storage = new MongoDbStorage({
         url: 'fake_url',
-        database: 'fake_db'
+        // must be a positive value
+        autoExpireMinutes: 42
       });
-      sinon.stub(MongoClient, "connect");
-      let query = null;
-      stub1 = sinon.stub(storage, 'Collection').value({
-        find: function (q) {
-          return {
-            toArray: function () {
-              query = q;
-              return [];
-            }
-          };
-        }
-      });
-      const keys = ['abc', '123', '456'];
-
-      //act
-      await storage.connect();
-      await storage.read(keys);
-
-      //assert
-      assert.deepEqual(query, {
-        _id: {
-          $in: keys
-        }
-      });
-
-      //cleanup
-      MongoClient.connect.restore();
-    });
-
-    it('should return storeItems as a dictionary', async function () {
-      //arrange
-
-      const storage = new MongoDbStorage({
-        url: 'fake_url',
-        database: 'fake_db'
-      });
-      sinon.stub(MongoClient, "connect");
-      stub1 = sinon.stub(storage, 'Collection').value({
-        find: function (q) {
-          return {
-            toArray: function () {
-              return [{
-                  _id: 'abc',
-                  state: 'some_state'
-                },
-                {
-                  _id: '123',
-                  state: {
-                    foo: 'bar'
-                  }
-                },
-                {
-                  _id: '456',
-                  state: 1234
-                }
-              ];
-            }
-          };
-        }
-      });
-      const keys = ['abc', '123', '456'];
-      const expected = {
-        'abc': 'some_state',
-        '123': {
-          foo: 'bar'
-        },
-        '456': 1234
+      
+      fakeCollection = {
+        createIndex: sinon.fake(),
+        dropIndex: sinon.fake(),
+        indexes: sinon.fake.returns([{ key: { dt: 1 }, expireAfterSeconds: 222 }])
       };
-      //act
-      await storage.connect();
-      let storeItems = await storage.read(keys);
 
-      //assert
-      assert.deepEqual(storeItems, expected);
+      collectionStub = sinon.stub(storage, "Collection").get(function(){ return fakeCollection});
 
-      //cleanup
-      MongoClient.connect.restore();
     });
+
+    afterEach(function () {
+      collectionStub.restore();
+    })
+
+    it('bails if no autoExpireMinutes',async function(){
+      storage.config.autoExpireMinutes = null;
+     
+      assert.deepEqual(storage.Collection.indexes.callCount, 0);
+
+    });
+
+    it('calls dropIndex on existing index', async function () {
+      await storage.createTtlIndex();
+
+      assert(storage.Collection.dropIndex.calledOnce);
+    })
   });
 
   describe('read', async function (done) {

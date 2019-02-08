@@ -1,25 +1,25 @@
 import { Storage, StoreItems } from 'botbuilder';
 import { MongoClient, Collection, ObjectID } from 'mongodb';
-import { connect } from 'tls';
-
-
 
 
 export interface MongoDbStorageConfig {
   url: string;
   database?: string;
   collection?: string;
+  autoExpireMinutes?: number;
+}
+
+export interface MongoDocumentStoreItem {
+  _id: string;
+  state: any;
 }
 
 export class MongoDbStorageError extends Error {
   public static readonly NO_CONFIG_ERROR: MongoDbStorageError = new MongoDbStorageError('MongoDbStorageConfig is required.');
   public static readonly NO_URL_ERROR: MongoDbStorageError = new MongoDbStorageError('MongoDbStorageConfig.url is required.');
+  public static readonly INVALID_AUTOEXPIRE_VALUE: MongoDbStorageError = new MongoDbStorageError('MongoDbStorageConfig.autoExpireMinutes is invalid. Expecting positive integer.');
 }
 
-interface MongoDocumentStoreItem {
-  _id: string;
-  state: any;
-}
 
 export class MongoDbStorage implements Storage {
   private config: any;
@@ -48,6 +48,10 @@ export class MongoDbStorage implements Storage {
       config.collection = MongoDbStorage.DEFAULT_COLLECTION_NAME;
     }
 
+    if (config.autoExpireMinutes && !(config.autoExpireMinutes > 1)) {
+      throw MongoDbStorageError.INVALID_AUTOEXPIRE_VALUE;
+    }
+
     return config as MongoDbStorageConfig
   }
 
@@ -56,9 +60,28 @@ export class MongoDbStorage implements Storage {
     return this.client;
   }
 
+  public async createTtlIndex(): Promise<any> {
+    if (!(this.config.autoExpireMinutes > 0)) { return; }
+
+    const existingIndexes = await this.Collection.indexes();
+
+    const found = existingIndexes.find(MongoDbStorage.ttlIndexFilter);
+    found && await this.Collection.dropIndex(found.name);
+
+    await this.Collection.createIndex(
+      { "dt": 1 },
+      { expireAfterSeconds: (this.config.autoExpireMinutes * 60) });
+
+  }
+
+  public static ttlIndexFilter(idx): boolean {
+      return idx.key.dt == 1 && idx.expireAfterSeconds > 0;
+  }
+
   public async ensureConnected(): Promise<MongoClient> {
     if (!this.client) {
       await this.connect();
+      await this.createTtlIndex();
     }
     return this.client;
   }

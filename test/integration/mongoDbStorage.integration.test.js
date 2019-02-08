@@ -13,12 +13,12 @@
  const settings = {
    url: "mongodb://localhost:27017/",
    database: "botFrameworkStorage_TestDB",
-   collection: "botFrameworkStorage_TestCollection"
+   collection: "botFrameworkStorage_TestCollection",
+   autoExpireMinutes: 1234
  };
 
- describe('mongoDbStorage integration tests', function () {
+ describe('mongoDbStorage integration tests', function (done) {
    let storage;
-
 
    beforeEach(async function () {
      storage = new MongoDbStorage(settings);
@@ -102,5 +102,36 @@
 
      });
    });
+
+
+   describe('createTtlIndex',  function(done){
+  
+    it('creates an index with specified TTL', async function(){
+      const target = storage;
+      const expected = target.config.autoExpireMinutes * 60;
+      await target.createTtlIndex();
+
+      const indexes = await target.Collection.indexes();
+
+      const {expireAfterSeconds} = indexes.find(MongoDbStorage.ttlIndexFilter);
+
+      assert.equal(expireAfterSeconds, expected, `Expected ttl seconds to match  ${storage.config.autoExpireMinutes} * 60 = ${expected} but got ${expireAfterSeconds}`);  
+    });
+
+    // it('Doesn\'nt create an index if no autoExpireMinutes', async function(){
+    //   const target = storage;
+    //   target.config.autoExpireMinutes = null;
+      
+    //   await target.Collection.drop();
+    //   await target.Collection.insert({_id: 1});
+
+    //   await target.createTtlIndex();
+
+    //   const indexes = await target.Collection.indexes();
+
+    //   assert.equal(inexes, [], `Expected no indexes since collectin is dropped`);  
+    // });
+  });
+  
 
  });
