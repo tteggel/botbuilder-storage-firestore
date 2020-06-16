@@ -1,6 +1,4 @@
 node_modules
-.env
-.nyc_output
+yarn-error.log
+.idea
 lib
-coverage
-*.tgz
