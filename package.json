@@ -14,9 +14,14 @@
   "scripts": {
     "build": "node node_modules/typescript/bin/tsc"
   },
+  "main": "./lib/index.js",
+  "typings": "./lib/index.d.ts",
   "devDependencies": {
     "@types/node": "^10.12.18",
     "source-map-support": "^0.5.19",
     "typescript": "^3.9.5"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
